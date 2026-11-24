@@ -80,6 +80,7 @@ type CardButton struct {
 	Text  string            // display label
 	Type  string            // "primary", "default", "danger"
 	Value string            // callback data, e.g. "cmd:/new", "cmd:/switch 3"
+	URL   string            // optional link target; platforms that support link buttons open it directly
 	Extra map[string]string // additional key-value pairs carried in the callback (platform-specific)
 }
 
@@ -110,6 +111,13 @@ func DefaultBtn(text, value string) CardButton {
 // DangerBtn creates a danger-styled button.
 func DangerBtn(text, value string) CardButton {
 	return CardButton{Text: text, Type: "danger", Value: value}
+}
+
+// LinkBtn creates a button that opens url on platforms supporting link
+// buttons; elsewhere it falls back to a normal callback button whose value
+// is the url (harmless if unused).
+func LinkBtn(text, url string) CardButton {
+	return CardButton{Text: text, Type: "default", Value: "url:" + url, URL: url}
 }
 
 // --- Builder API ---

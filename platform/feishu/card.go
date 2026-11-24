@@ -144,6 +144,14 @@ func renderCardMap(card *core.Card, sessionKey string) map[string]any {
 					"type":  btnType,
 					"value": valMap,
 				}
+				if btn.URL != "" {
+					action["multi_url"] = map[string]any{
+						"url":         btn.URL,
+						"android_url": btn.URL,
+						"ios_url":     btn.URL,
+						"pc_url":      btn.URL,
+					}
+				}
 				if e.Layout == core.CardActionLayoutEqualColumns {
 					action["width"] = "fill"
 				}

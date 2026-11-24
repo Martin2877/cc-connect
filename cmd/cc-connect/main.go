@@ -419,6 +419,15 @@ func main() {
 		}
 
 		engine := core.NewEngine(proj.Name, agent, platforms, sessionFile, lang)
+		// Wire external link templates for the /links command
+		if l := proj.Links; l.IDE != "" || l.Term != "" || l.Web != "" || l.Preview != "" {
+			engine.SetLinks(map[string]string{
+				"ide":     l.IDE,
+				"term":    l.Term,
+				"web":     l.Web,
+				"preview": l.Preview,
+			})
+		}
 		// Wire display settings including show_context_indicator and reply_footer
 		// Global [display] config can be overridden by project-level settings
 		_, _, _, _, _, showCtx, showFooter, _ := config.EffectiveDisplay(cfg, &proj)

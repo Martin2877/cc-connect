@@ -12,6 +12,7 @@ import (
 	"io"
 	"log/slog"
 	"math"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -530,6 +531,11 @@ type Engine struct {
 	// /web command callbacks
 	webSetupFunc  func() (port int, token string, needRestart bool, err error)
 	webStatusFunc func() (url string)
+
+	// links holds external URL templates for the /links command
+	// (keys: "ide", "term", "web", "preview"). See SetLinks.
+	links   map[string]string
+	linksMu sync.RWMutex
 
 	// Data directory for socket path injection
 	dataDir string
@@ -7271,6 +7277,7 @@ var builtinCommands = []struct {
 	{[]string{"workspace", "ws"}, "workspace"},
 	{[]string{"whoami", "myid"}, "whoami"},
 	{[]string{"web"}, "web"},
+	{[]string{"links", "link", "open"}, "links"},
 	{[]string{"diff"}, "diff"},
 	{[]string{"ps", "btw"}, "ps"},
 }
@@ -7520,6 +7527,8 @@ func (e *Engine) handleCommand(p Platform, msg *Message, raw string) bool {
 		e.cmdWhoami(p, msg)
 	case "web":
 		e.cmdWeb(p, msg, args)
+	case "links":
+		e.cmdLinks(p, msg, args)
 	case "ps":
 		e.cmdPs(p, msg, args)
 	default:
@@ -18191,6 +18200,92 @@ func (e *Engine) cmdWeb(p Platform, msg *Message, args []string) {
 	default:
 		e.cmdWebStatus(p, msg)
 	}
+}
+
+// SetLinks registers external URL templates (IDE / web terminal / console /
+// preview) that the /links command surfaces as link buttons. Keys: "ide",
+// "term", "web", "preview". Templates may contain {work_dir}, {project} and
+// {port} (preview only).
+func (e *Engine) SetLinks(links map[string]string) {
+	e.linksMu.Lock()
+	defer e.linksMu.Unlock()
+	e.links = links
+}
+
+func (e *Engine) getLinks() map[string]string {
+	e.linksMu.RLock()
+	defer e.linksMu.RUnlock()
+	return e.links
+}
+
+// expandLinkTemplate substitutes {work_dir}, {project} and {port} in a
+// configured link template. Returns "" for empty templates.
+func (e *Engine) expandLinkTemplate(tmpl string, msg *Message, port string) string {
+	tmpl = strings.TrimSpace(tmpl)
+	if tmpl == "" {
+		return ""
+	}
+	repl := map[string]string{
+		"{work_dir}": e.commandWorkDir(e.agent, msg),
+		"{project}":  e.name,
+	}
+	if port != "" {
+		repl["{port}"] = port
+	}
+	for k, v := range repl {
+		tmpl = strings.ReplaceAll(tmpl, k, url.QueryEscape(v))
+	}
+	return tmpl
+}
+
+// cmdLinks renders the configured external links as a card with link buttons.
+// `/links preview <port>` replies with just the expanded preview URL.
+func (e *Engine) cmdLinks(p Platform, msg *Message, args []string) {
+	links := e.getLinks()
+
+	if len(args) > 0 && matchSubCommand(strings.ToLower(args[0]), []string{"preview"}) == "preview" {
+		tmpl := links["preview"]
+		if tmpl == "" {
+			e.reply(p, msg.ReplyCtx, e.i18n.T(MsgLinksNotConfigured))
+			return
+		}
+		port := ""
+		if len(args) > 1 {
+			port = strings.TrimSpace(args[1])
+		}
+		if port == "" {
+			e.reply(p, msg.ReplyCtx, e.i18n.T(MsgLinksPreviewUsage))
+			return
+		}
+		e.reply(p, msg.ReplyCtx, e.expandLinkTemplate(tmpl, msg, port))
+		return
+	}
+
+	var md strings.Builder
+	var btns []CardButton
+	add := func(key string, labelKey MsgKey) {
+		u := e.expandLinkTemplate(links[key], msg, "")
+		if u == "" {
+			return
+		}
+		label := e.i18n.T(labelKey)
+		fmt.Fprintf(&md, "- [%s](%s)\n", label, u)
+		btns = append(btns, LinkBtn(label, u))
+	}
+	add("ide", MsgLinksIDE)
+	add("term", MsgLinksTerm)
+	add("web", MsgLinksWeb)
+	add("preview", MsgLinksPreview)
+	if md.Len() == 0 {
+		e.reply(p, msg.ReplyCtx, e.i18n.T(MsgLinksNotConfigured))
+		return
+	}
+	card := NewCard().
+		Title(e.i18n.T(MsgLinksTitle), "blue").
+		Markdown(strings.TrimSpace(md.String())).
+		ButtonsEqual(btns...).
+		Build()
+	e.replyWithCard(p, msg.ReplyCtx, card)
 }
 
 func (e *Engine) cmdWebSetup(p Platform, msg *Message) {

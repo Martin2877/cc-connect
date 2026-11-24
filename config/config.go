@@ -600,6 +600,25 @@ type ProjectConfig struct {
 	Shell string `toml:"shell,omitempty"`
 	// ShellProfile overrides the global shell_profile for this project.
 	ShellProfile string `toml:"shell_profile,omitempty"`
+	// Links defines external URL templates surfaced by the /links command —
+	// typically reverse-proxied IDE / web-terminal / preview endpoints for the
+	// machine running this project. Templates may contain {work_dir}, {project}
+	// and {port} (preview only, supplied via `/links preview <port>`).
+	Links LinksConfig `toml:"links,omitempty"`
+}
+
+// LinksConfig holds optional URL templates for the /links command card.
+// Any empty entry is omitted from the card.
+type LinksConfig struct {
+	// IDE is a browser IDE entry, e.g. "https://code.example.com/?folder={work_dir}".
+	IDE string `toml:"ide,omitempty"`
+	// Term is a web terminal entry, e.g. "https://term.example.com/".
+	Term string `toml:"term,omitempty"`
+	// Web is a web admin/console entry, e.g. "https://cc.example.com/".
+	Web string `toml:"web,omitempty"`
+	// Preview is a dev-server preview template containing {port},
+	// e.g. "https://p{port}.example.com/".
+	Preview string `toml:"preview,omitempty"`
 }
 
 type AgentConfig struct {

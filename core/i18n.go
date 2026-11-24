@@ -552,14 +552,21 @@ const (
 
 	MsgCommandTimeout MsgKey = "command_timeout"
 
-	MsgBannedWordBlocked MsgKey = "banned_word_blocked"
-	MsgCommandDisabled   MsgKey = "command_disabled"
-	MsgAdminRequired     MsgKey = "admin_required"
-	MsgRateLimited       MsgKey = "rate_limited"
-	MsgPsSent            MsgKey = "ps_sent"
-	MsgPsSendFailed      MsgKey = "ps_send_failed"
-	MsgPsEmpty           MsgKey = "ps_empty"
-	MsgPsNoSession       MsgKey = "ps_no_session"
+	MsgBannedWordBlocked  MsgKey = "banned_word_blocked"
+	MsgLinksTitle         MsgKey = "links_title"
+	MsgLinksIDE           MsgKey = "links_ide"
+	MsgLinksTerm          MsgKey = "links_term"
+	MsgLinksWeb           MsgKey = "links_web"
+	MsgLinksPreview       MsgKey = "links_preview"
+	MsgLinksNotConfigured MsgKey = "links_not_configured"
+	MsgLinksPreviewUsage  MsgKey = "links_preview_usage"
+	MsgCommandDisabled    MsgKey = "command_disabled"
+	MsgAdminRequired      MsgKey = "admin_required"
+	MsgRateLimited        MsgKey = "rate_limited"
+	MsgPsSent             MsgKey = "ps_sent"
+	MsgPsSendFailed       MsgKey = "ps_send_failed"
+	MsgPsEmpty            MsgKey = "ps_empty"
+	MsgPsNoSession        MsgKey = "ps_no_session"
 
 	MsgWhoamiTitle     MsgKey = "whoami_title"
 	MsgWhoamiCardTitle MsgKey = "whoami_card_title"
@@ -3448,6 +3455,55 @@ var messages = map[MsgKey]map[Language]string{
 		LangTraditionalChinese: "⚠️ 訊息已被攔截，包含違禁詞。",
 		LangJapanese:           "⚠️ 禁止ワードが含まれているため、メッセージがブロックされました。",
 		LangSpanish:            "⚠️ Su mensaje fue bloqueado porque contiene una palabra prohibida.",
+	},
+	MsgLinksTitle: {
+		LangEnglish:            "🔗 Quick Links",
+		LangChinese:            "🔗 快捷入口",
+		LangTraditionalChinese: "🔗 快捷入口",
+		LangJapanese:           "🔗 クイックリンク",
+		LangSpanish:            "🔗 Enlaces rápidos",
+	},
+	MsgLinksIDE: {
+		LangEnglish:            "📁 Open IDE",
+		LangChinese:            "📁 打开 IDE",
+		LangTraditionalChinese: "📁 開啟 IDE",
+		LangJapanese:           "📁 IDEを開く",
+		LangSpanish:            "📁 Abrir IDE",
+	},
+	MsgLinksTerm: {
+		LangEnglish:            "🖥 Web Terminal",
+		LangChinese:            "🖥 网页终端",
+		LangTraditionalChinese: "🖥 網頁終端",
+		LangJapanese:           "🖥 Webターミナル",
+		LangSpanish:            "🖥 Terminal web",
+	},
+	MsgLinksWeb: {
+		LangEnglish:            "⚙️ Console",
+		LangChinese:            "⚙️ 控制台",
+		LangTraditionalChinese: "⚙️ 控制台",
+		LangJapanese:           "⚙️ コンソール",
+		LangSpanish:            "⚙️ Consola",
+	},
+	MsgLinksPreview: {
+		LangEnglish:            "🌐 Preview",
+		LangChinese:            "🌐 预览",
+		LangTraditionalChinese: "🌐 預覽",
+		LangJapanese:           "🌐 プレビュー",
+		LangSpanish:            "🌐 Vista previa",
+	},
+	MsgLinksNotConfigured: {
+		LangEnglish:            "ℹ️ No links configured. Set `[projects.links]` (ide/term/web/preview) in config.toml.",
+		LangChinese:            "ℹ️ 未配置快捷链接。请在 config.toml 的 `[projects.links]` 中设置 ide/term/web/preview。",
+		LangTraditionalChinese: "ℹ️ 未配置快捷連結。請在 config.toml 的 `[projects.links]` 中設定 ide/term/web/preview。",
+		LangJapanese:           "ℹ️ リンクが未設定です。config.toml の `[projects.links]` で ide/term/web/preview を設定してください。",
+		LangSpanish:            "ℹ️ No hay enlaces configurados. Define `[projects.links]` (ide/term/web/preview) en config.toml.",
+	},
+	MsgLinksPreviewUsage: {
+		LangEnglish:            "Usage: `/links preview <port>`",
+		LangChinese:            "用法：`/links preview <端口>`",
+		LangTraditionalChinese: "用法：`/links preview <端口>`",
+		LangJapanese:           "使い方: `/links preview <ポート>`",
+		LangSpanish:            "Uso: `/links preview <puerto>`",
 	},
 	MsgCommandDisabled: {
 		LangEnglish:            "🚫 Command `%s` is disabled for this project.",
