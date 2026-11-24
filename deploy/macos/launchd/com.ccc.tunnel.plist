@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- install.sh substitutes {{HOME}}, {{AUTOSSH}}, {{VPS_HOST}} -->
+<plist version="1.0"><dict>
+  <key>Label</key><string>com.ccc.tunnel</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>{{AUTOSSH}}</string>
+    <string>-M</string><string>0</string>
+    <string>-N</string>
+    <string>-T</string>
+    <string>-o</string><string>ServerAliveInterval=30</string>
+    <string>-o</string><string>ServerAliveCountMax=3</string>
+    <string>-o</string><string>ExitOnForwardFailure=yes</string>
+    <string>-o</string><string>BatchMode=yes</string>
+    <string>-i</string><string>{{HOME}}/.ssh/id_cc_tunnel</string>
+    <!-- service endpoints: VPS loopback :PORT → local :PORT -->
+    <string>-R</string><string>127.0.0.2:18080:127.0.0.1:8080</string>
+    <string>-R</string><string>127.0.0.2:18081:127.0.0.1:7681</string>
+    <string>-R</string><string>127.0.0.2:18082:127.0.0.1:9820</string>
+    <!-- dev-server previews — every port here must also be whitelisted
+         in PermitListen on the VPS and have a DNS/Caddy entry -->
+    <string>-R</string><string>127.0.0.2:3000:127.0.0.1:3000</string>
+    <string>-R</string><string>127.0.0.2:3001:127.0.0.1:3001</string>
+    <string>-R</string><string>127.0.0.2:4000:127.0.0.1:4000</string>
+    <string>-R</string><string>127.0.0.2:4200:127.0.0.1:4200</string>
+    <string>-R</string><string>127.0.0.2:5000:127.0.0.1:5000</string>
+    <string>-R</string><string>127.0.0.2:5173:127.0.0.1:5173</string>
+    <string>-R</string><string>127.0.0.2:5174:127.0.0.1:5174</string>
+    <string>-R</string><string>127.0.0.2:8000:127.0.0.1:8000</string>
+    <string>-R</string><string>127.0.0.2:8001:127.0.0.1:8001</string>
+    <string>-R</string><string>127.0.0.2:8888:127.0.0.1:8888</string>
+    <string>-R</string><string>127.0.0.2:9000:127.0.0.1:9000</string>
+    <string>fwd@{{VPS_HOST}}</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>AUTOSSH_GATETIME</key><string>0</string>
+    <key>AUTOSSH_LOGLEVEL</key><string>7</string>
+    <key>AUTOSSH_LOGFILE</key><string>{{HOME}}/Library/Logs/ccc/autossh.log</string>
+  </dict>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>StandardOutPath</key><string>{{HOME}}/Library/Logs/ccc/tunnel.log</string>
+  <key>StandardErrorPath</key><string>{{HOME}}/Library/Logs/ccc/tunnel.err</string>
+</dict></plist>

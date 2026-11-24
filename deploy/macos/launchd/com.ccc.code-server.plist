@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- install.sh substitutes {{HOME}} -->
+<plist version="1.0"><dict>
+  <key>Label</key><string>com.ccc.code-server</string>
+  <key>ProgramArguments</key>
+  <array><string>{{HOME}}/.local/bin/code-server</string></array>
+  <key>EnvironmentVariables</key>
+  <dict><key>PATH</key><string>{{HOME}}/.local/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string></dict>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>StandardOutPath</key><string>{{HOME}}/Library/Logs/ccc/code-server.log</string>
+  <key>StandardErrorPath</key><string>{{HOME}}/Library/Logs/ccc/code-server.err</string>
+</dict></plist>

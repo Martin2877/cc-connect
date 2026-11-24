@@ -1,0 +1,37 @@
+# ~/.config/systemd/user/ccc-tunnel.service
+# systemctl --user enable --now ccc-tunnel
+# loginctl enable-linger $USER   # start at boot without login
+[Unit]
+Description=cc-connect remote-access reverse tunnel (autossh -R)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Environment=AUTOSSH_GATETIME=0
+Environment=AUTOSSH_LOGLEVEL=7
+# Adjust -R list + host; every remote port must be in the VPS PermitListen
+# whitelist (deploy/vps/sshd-tunnel.conf).
+ExecStart=/usr/bin/autossh -M 0 -N -T \
+  -o ServerAliveInterval=30 -o ServerAliveCountMax=3 \
+  -o ExitOnForwardFailure=yes -o BatchMode=yes \
+  -i %h/.ssh/id_cc_tunnel \
+  -R 127.0.0.2:18080:127.0.0.1:8080 \
+  -R 127.0.0.2:18081:127.0.0.1:7681 \
+  -R 127.0.0.2:18082:127.0.0.1:9820 \
+  -R 127.0.0.2:3000:127.0.0.1:3000 \
+  -R 127.0.0.2:3001:127.0.0.1:3001 \
+  -R 127.0.0.2:4000:127.0.0.1:4000 \
+  -R 127.0.0.2:4200:127.0.0.1:4200 \
+  -R 127.0.0.2:5000:127.0.0.1:5000 \
+  -R 127.0.0.2:5173:127.0.0.1:5173 \
+  -R 127.0.0.2:5174:127.0.0.1:5174 \
+  -R 127.0.0.2:8000:127.0.0.1:8000 \
+  -R 127.0.0.2:8001:127.0.0.1:8001 \
+  -R 127.0.0.2:8888:127.0.0.1:8888 \
+  -R 127.0.0.2:9000:127.0.0.1:9000 \
+  fwd@VPS_HOST
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target

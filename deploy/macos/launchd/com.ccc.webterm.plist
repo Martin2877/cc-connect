@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- install.sh substitutes {{HOME}}, {{TERM_ORIGIN}} -->
+<plist version="1.0"><dict>
+  <key>Label</key><string>com.ccc.webterm</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>{{HOME}}/.local/bin/gotty</string>
+    <string>-a</string><string>127.0.0.1</string>
+    <string>-p</string><string>7681</string>
+    <string>-w</string>
+    <!-- WS origin pinned to your term domain, e.g. ^https://term\.example\.com$ -->
+    <string>--ws-origin</string><string>{{TERM_ORIGIN}}</string>
+    <string>--title-format</string><string>webterm@{{HOSTNAME}}</string>
+    <string>/usr/bin/screen</string>
+    <string>-xRR</string>
+    <string>webterm</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict><key>PATH</key><string>{{HOME}}/.local/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string></dict>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>StandardOutPath</key><string>{{HOME}}/Library/Logs/ccc/webterm.log</string>
+  <key>StandardErrorPath</key><string>{{HOME}}/Library/Logs/ccc/webterm.err</string>
+</dict></plist>

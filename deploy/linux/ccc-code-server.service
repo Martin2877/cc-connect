@@ -1,0 +1,17 @@
+# ~/.config/systemd/user/ccc-code-server.service
+# systemctl --user enable --now ccc-code-server
+# Requires code-server installed (release tarball under ~/.local/lib or the
+# official install.sh script). Auth + bind-addr live in
+# ~/.config/code-server/config.yaml — keep bind-addr at 127.0.0.1:8080.
+[Unit]
+Description=code-server (browser IDE, loopback only)
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/code-server
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

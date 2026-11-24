@@ -1,0 +1,19 @@
+# ~/.config/systemd/user/ccc-webterm.service
+# systemctl --user enable --now ccc-webterm
+# gotty serves a persistent tmux session named `webterm` (screen also works —
+# swap the ExecStart tail for: /usr/bin/screen -xRR webterm)
+[Unit]
+Description=gotty web terminal (loopback only, fronted by Caddy basic_auth)
+After=network.target
+
+[Service]
+# Pin --ws-origin to your term domain: ^https://term\.example\.com$
+ExecStart=%h/.local/bin/gotty -a 127.0.0.1 -p 7681 -w \
+  --ws-origin 'TERM_ORIGIN' \
+  --title-format webterm@%H \
+  /usr/bin/tmux new-session -A -s webterm
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target
