@@ -73,6 +73,10 @@ type Agent struct {
 	// silently reverts the choice.
 	thoughtLevelOverride string
 
+	// rpcTimeoutSecs overrides the default bounded-RPC timeout for all
+	// sessions this agent spawns (option `rpc_timeout_secs`; seconds).
+	rpcTimeoutSecs int
+
 	activeSession atomic.Pointer[acpSession]
 
 	mu sync.RWMutex
@@ -130,16 +134,19 @@ func New(opts map[string]any) (core.Agent, error) {
 	effort, _ := opts["reasoning_effort"].(string)
 	effort = strings.TrimSpace(effort)
 
+	rpcTimeoutSecs := intFromOpts(opts["rpc_timeout_secs"])
+
 	return &Agent{
-		workDir:      workDir,
-		cmd:          cmdStr,
-		cliExtraArgs: cliExtraArgs,
-		args:         args,
-		staticEnv:    staticEnv,
-		extraEnv:     extra,
-		authMethod:   authMethod,
-		displayName:  displayName,
-		mode:         mode,
+		workDir:        workDir,
+		cmd:            cmdStr,
+		cliExtraArgs:   cliExtraArgs,
+		args:           args,
+		staticEnv:      staticEnv,
+		extraEnv:       extra,
+		authMethod:     authMethod,
+		displayName:    displayName,
+		mode:           mode,
+		rpcTimeoutSecs: rpcTimeoutSecs,
 
 		thoughtLevelOverride: effort,
 	}, nil
@@ -189,6 +196,20 @@ func envPairsFromOpts(opts map[string]any) []string {
 	default:
 		return nil
 	}
+}
+
+// intFromOpts coerces a numeric option value (TOML decodes to int64 or
+// float64 depending on the parser) to int; non-numeric input yields 0.
+func intFromOpts(v any) int {
+	switch n := v.(type) {
+	case int:
+		return n
+	case int64:
+		return int(n)
+	case float64:
+		return int(n)
+	}
+	return 0
 }
 
 func parseStringSlice(v any) []string {
@@ -251,6 +272,9 @@ func (a *Agent) WorkspaceAgentOptions() map[string]any {
 	if a.displayName != "" {
 		opts["display_name"] = a.displayName
 	}
+	if a.rpcTimeoutSecs > 0 {
+		opts["rpc_timeout_secs"] = a.rpcTimeoutSecs
+	}
 	return opts
 }
 
@@ -267,6 +291,7 @@ func (a *Agent) StartSession(ctx context.Context, sessionID string) (core.AgentS
 	workDir := a.workDir
 	authMethod := a.authMethod
 	pendingMode := a.mode
+	rpcTimeoutSecs := a.rpcTimeoutSecs
 	extra := append([]string(nil), a.extraEnv...)
 	extra = append(extra, a.sessionEnv...)
 	a.mu.RUnlock()
@@ -290,6 +315,7 @@ func (a *Agent) StartSession(ctx context.Context, sessionID string) (core.AgentS
 		initialModel:        pendingModel,
 		initialThoughtLevel: pendingThought,
 		callbacks:           a,
+		rpcTimeoutSecs:      rpcTimeoutSecs,
 	})
 }
 

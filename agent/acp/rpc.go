@@ -5,11 +5,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 type rpcOutcome struct {
@@ -32,17 +34,39 @@ func (e *rpcErrPayload) Error() string {
 type rpcNotifyHandler func(method string, params json.RawMessage)
 type rpcRequestHandler func(method string, id json.RawMessage, params json.RawMessage)
 
+// acpWriteTimeout bounds how long a single write to the agent's stdin may
+// block before the write is abandoned. A child that wedges and stops
+// reading stdin would otherwise pin t's write mutex forever and hang every
+// subsequent call — this was the mechanism behind a reported silent wedge
+// where a hung agent held all session locks indefinitely.
+var acpWriteTimeout = 30 * time.Second
+
+var errTransportClosed = errors.New("acp: transport closed")
+
+// writeReq is one framed message queued for the dedicated writer pump.
+type writeReq struct {
+	data []byte
+	res  chan error // buffered(1); receives the result of the underlying Write
+}
+
 // transport implements newline-delimited JSON-RPC 2.0 over a pair of streams.
 type transport struct {
 	in  *bufio.Reader
 	out io.Writer
-	mu  sync.Mutex
-	enc *json.Encoder
 
 	nextID atomic.Int64
 
 	pendingMu sync.Mutex
 	pending   map[string]chan rpcOutcome
+
+	// Writes are serialized through a single pump goroutine instead of a
+	// mutex around the encoder. If the child stops draining stdin the pump
+	// wedges in Write, but callers still unblock via acpWriteTimeout or
+	// shutdown — the stall can no longer spread to other goroutines.
+	writeCh   chan writeReq
+	writeOnce sync.Once
+	done      chan struct{}
+	closeOnce sync.Once
 
 	onNotif rpcNotifyHandler
 	onReq   rpcRequestHandler
@@ -52,8 +76,9 @@ func newTransport(in io.Reader, out io.Writer, onNotif rpcNotifyHandler, onReq r
 	return &transport{
 		in:      bufio.NewReader(in),
 		out:     out,
-		enc:     json.NewEncoder(out),
 		pending: make(map[string]chan rpcOutcome),
+		writeCh: make(chan writeReq),
+		done:    make(chan struct{}),
 		onNotif: onNotif,
 		onReq:   onReq,
 	}
@@ -71,7 +96,7 @@ func (t *transport) readLoop(ctx context.Context) {
 			if err != io.EOF {
 				slog.Debug("acp: read error", "error", err)
 			}
-			t.cancelAll(fmt.Errorf("acp: read closed: %w", err))
+			t.shutdown(fmt.Errorf("acp: read closed: %w", err))
 			return
 		}
 		if len(bytes.TrimSpace(line)) == 0 {
@@ -155,6 +180,17 @@ func (t *transport) completePending(id json.RawMessage, result json.RawMessage, 
 	}
 }
 
+// shutdown permanently closes the transport: pending RPC calls, queued and
+// in-flight writes, and future writeJSON callers all fail fast with err (or
+// errTransportClosed). Idempotent; invoked when the read loop dies or the
+// owning session is closed.
+func (t *transport) shutdown(err error) {
+	t.closeOnce.Do(func() {
+		close(t.done)
+		t.cancelAll(err)
+	})
+}
+
 func (t *transport) cancelAll(err error) {
 	t.pendingMu.Lock()
 	defer t.pendingMu.Unlock()
@@ -202,6 +238,24 @@ func (t *transport) call(ctx context.Context, method string, params any) (json.R
 	}
 }
 
+// callBound issues an RPC that gives up after d. Use it for every request
+// whose response must arrive promptly (handshake, set_mode, list, ...). Do
+// NOT use it for session/prompt — that response legitimately arrives only
+// when the whole turn finishes, so it stays bounded by the caller ctx and
+// the engine's event-idle watchdog instead.
+func (t *transport) callBound(ctx context.Context, d time.Duration, method string, params any) (json.RawMessage, error) {
+	if d > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, d)
+		defer cancel()
+	}
+	res, err := t.call(ctx, method, params)
+	if errors.Is(err, context.DeadlineExceeded) {
+		return nil, fmt.Errorf("acp: %s: no response within %s", method, d)
+	}
+	return res, err
+}
+
 func (t *transport) sendNotification(method string, params any) error {
 	return t.writeJSON(map[string]any{
 		"jsonrpc": "2.0",
@@ -210,10 +264,57 @@ func (t *transport) sendNotification(method string, params any) error {
 	})
 }
 
+// writePump serializes all outbound frames. It exits when the transport is
+// shut down or a write fails permanently; a blocked Write leaves only this
+// goroutine wedged, never callers (they time out via acpWriteTimeout).
+func (t *transport) writePump() {
+	for {
+		select {
+		case <-t.done:
+			return
+		case req := <-t.writeCh:
+			_, err := t.out.Write(req.data)
+			select {
+			case req.res <- err:
+			default:
+			}
+			if err != nil {
+				t.shutdown(fmt.Errorf("acp: write: %w", err))
+				return
+			}
+		}
+	}
+}
+
 func (t *transport) writeJSON(v any) error {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	return t.enc.Encode(v)
+	data, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	data = append(data, '\n')
+
+	t.writeOnce.Do(func() { go t.writePump() })
+	req := writeReq{data: data, res: make(chan error, 1)}
+	timer := time.NewTimer(acpWriteTimeout)
+	defer timer.Stop()
+	select {
+	case <-t.done:
+		return errTransportClosed
+	case t.writeCh <- req:
+	case <-timer.C:
+		return fmt.Errorf("acp: write timed out after %s", acpWriteTimeout)
+	}
+	// Once the pump took the request it always signals res (the channel is
+	// buffered) — success and transport death can race here, and res must
+	// win. Shutdown is still honored: a dead pipe fails the Write and the
+	// error arrives through res; a Write blocked on a wedged child is
+	// bounded by the remaining write timeout.
+	select {
+	case err := <-req.res:
+		return err
+	case <-timer.C:
+		return fmt.Errorf("acp: write timed out after %s", acpWriteTimeout)
+	}
 }
 
 type rpcResponseMsg struct {

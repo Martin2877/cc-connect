@@ -403,6 +403,22 @@ level = "info" # debug, info, warn, error
 # enabled = true                    # Forward native terminal sessions to Slack
 # channel = "C0AL13PN4BG"           # Slack channel ID to post observations to
 
+# --- External links for /links command / /links 命令的外部快捷链接 ---
+# URL templates surfaced as link buttons via /links. Typical use: services on
+# this machine exposed through a reverse proxy or tunnel (code-server, ttyd/
+# gotty web terminal, the cc-connect web console, dev-server previews).
+# 通过 /links 以链接按钮形式呈现的 URL 模板。典型用法：本机服务经反代/隧道
+# 暴露的入口（code-server、ttyd/gotty 网页终端、cc-connect 控制台、预览）。
+# Placeholders: {work_dir}, {project}, and {port} (preview only, via
+# `/links preview <port>`). All empty entries are omitted.
+# 占位符：{work_dir}、{project}、{port}（仅 preview，用 /links preview <端口>）。
+#
+# [projects.links]
+# ide     = "https://code.example.com/?folder={work_dir}"
+# term    = "https://term.example.com/"
+# web     = "https://cc.example.com/"
+# preview = "https://p{port}.example.com/"
+
 # =============================================================================
 # Cron Settings / 定时任务设置
 # =============================================================================
@@ -2187,6 +2203,15 @@ app_secret = "your-feishu-app-secret"
 # # session/set_mode. Valid ids: normal, ask, plan, accept-edits, bypass.
 # # 可选：新会话的初始权限模式。合法值：normal / ask / plan / accept-edits / bypass
 # # mode = "normal"
+# #
+# # Optional: seconds to wait for any control RPC reply (initialize,
+# # session/load, set_mode, ...). A hung agent that never answers is now
+# # abandoned instead of silently wedging the session forever; session/load
+# # gets at least 2min for history replay regardless. Default 30.
+# # 可选：控制类 RPC 应答超时秒数（initialize / session/load / set_mode 等）。
+# # 默认 30；session/load 因回放历史至少保底 2 分钟。Agent 假死无响应时
+# # 超时放弃并回退，不再永久卡死会话。
+# # rpc_timeout_secs = 30
 # #
 # # Optional: Windsurf Enterprise API key (overrides `devin auth login`).
 # # 可选：Windsurf 企业版 API Key（优先级高于 `devin auth login` 的本地凭证）。

@@ -132,7 +132,7 @@ func (a *Agent) probeSpawn(ctx context.Context, cwd string) (*transport, *bytes.
 // probeInitialize performs the ACP handshake on an already-spawned
 // transport and returns the parsed initialize result.
 func probeInitialize(ctx context.Context, tr *transport) (*acpInitializeResult, error) {
-	raw, err := tr.call(ctx, "initialize", map[string]any{
+	raw, err := tr.callBound(ctx, defaultACPRPCTimeout, "initialize", map[string]any{
 		"protocolVersion": 1,
 		"clientCapabilities": map[string]any{
 			"fs":       map[string]any{"readTextFile": false, "writeTextFile": false},
@@ -159,7 +159,7 @@ func probeListSessions(ctx context.Context, tr *transport, cwdFilter string) ([]
 	if cwdFilter != "" {
 		params["cwd"] = cwdFilter
 	}
-	raw, err := tr.call(ctx, "session/list", params)
+	raw, err := tr.callBound(ctx, defaultACPRPCTimeout, "session/list", params)
 	if err != nil {
 		if rpcErr, ok := err.(*rpcErrPayload); ok {
 			if rpcErr.Code == -32601 || rpcErr.Code == -32600 {

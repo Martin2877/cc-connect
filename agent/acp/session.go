@@ -33,6 +33,26 @@ type acpSession struct {
 	cmd *exec.Cmd
 	tr  *transport
 
+	// Outbound event queue. emit() never blocks the producer: events go to
+	// emitBuf and a lazily-started pump drains them into the (small,
+	// consumer-visible) events channel. Without this, a history replay
+	// during session/load fills the bounded channel while nobody is
+	// draining yet, which stalls the transport read loop mid-RPC — the
+	// session/load response is then never read and the handshake wedges
+	// forever while holding engine locks (silent "no reply" incident).
+	emitMu   sync.Mutex
+	emitBuf  []core.Event
+	emitSig  chan struct{}
+	pumpOnce sync.Once
+
+	// rpcTimeout bounds every ACP request whose response should arrive
+	// promptly (initialize, authenticate, session/new, set_mode, ...).
+	// resumeTimeout bounds session/load|session/resume separately since
+	// history replay legitimately takes longer. session/prompt is exempt:
+	// its response arrives at turn end (unbounded by design).
+	rpcTimeout    time.Duration
+	resumeTimeout time.Duration
+
 	acpSessMu sync.RWMutex
 	acpSessID string
 
@@ -94,12 +114,20 @@ type acpSessionConfig struct {
 	// `thought_level` config option that some agents publish (CodeBuddy).
 	initialThoughtLevel string
 	callbacks           sessionCallbacks // may be nil
+	// rpcTimeoutSecs overrides defaultACPRPCTimeout (seconds; <=0 keeps
+	// the default). Comes from the `rpc_timeout_secs` agent option.
+	rpcTimeoutSecs int
 }
 
 func newACPSession(ctx context.Context, cfg acpSessionConfig) (*acpSession, error) {
 	absWorkDir, err := filepath.Abs(cfg.workDir)
 	if err != nil {
 		absWorkDir = cfg.workDir
+	}
+
+	rpcTimeout := defaultACPRPCTimeout
+	if cfg.rpcTimeoutSecs > 0 {
+		rpcTimeout = time.Duration(cfg.rpcTimeoutSecs) * time.Second
 	}
 
 	sessionCtx, cancel := context.WithCancel(ctx)
@@ -112,6 +140,11 @@ func newACPSession(ctx context.Context, cfg acpSessionConfig) (*acpSession, erro
 		toolInputByID: make(map[string]string),
 		acpSessID:     cfg.resumeSessionID,
 		callbacks:     cfg.callbacks,
+		rpcTimeout:    rpcTimeout,
+		resumeTimeout: rpcTimeout,
+	}
+	if s.resumeTimeout < defaultACPResumeTimeout {
+		s.resumeTimeout = defaultACPResumeTimeout
 	}
 	s.alive.Store(true)
 
@@ -205,6 +238,20 @@ func newACPSession(ctx context.Context, cfg acpSessionConfig) (*acpSession, erro
 	return s, nil
 }
 
+// defaultACPRPCTimeout bounds prompt-response RPCs; a hung agent can no
+// longer block the handshake forever while the engine holds session locks.
+// defaultACPResumeTimeout is a floor for session/load|resume whose history
+// replay legitimately takes longer than a quick control call.
+var (
+	defaultACPRPCTimeout    = 30 * time.Second
+	defaultACPResumeTimeout = 2 * time.Minute
+)
+
+// callBound issues a bounded RPC over the session transport.
+func (s *acpSession) callBound(d time.Duration, method string, params any) (json.RawMessage, error) {
+	return s.tr.callBound(s.ctx, d, method, params)
+}
+
 // handshake runs initialize → optional authenticate → session/load or
 // session/new, and caches any modes the server advertises so
 // SetLiveMode / PermissionModes can answer correctly.
@@ -230,7 +277,7 @@ func (s *acpSession) handshake(resumeSessionID string, authMethod string) error 
 			"version": "1.0.0",
 		},
 	}
-	res, err := s.tr.call(s.ctx, "initialize", initParams)
+	res, err := s.callBound(s.rpcTimeout, "initialize", initParams)
 	if err != nil {
 		return fmt.Errorf("acp: initialize: %w", err)
 	}
@@ -252,7 +299,7 @@ func (s *acpSession) handshake(resumeSessionID string, authMethod string) error 
 	}
 
 	if strings.TrimSpace(authMethod) != "" {
-		if _, err := s.tr.call(s.ctx, "authenticate", map[string]any{
+		if _, err := s.callBound(s.rpcTimeout, "authenticate", map[string]any{
 			"methodId": authMethod,
 		}); err != nil {
 			return fmt.Errorf("acp: authenticate (%s): %w", authMethod, err)
@@ -286,7 +333,7 @@ func (s *acpSession) handshake(resumeSessionID string, authMethod string) error 
 		// servers advertising `resume` reintroduce the deadlock #2038
 		// was written to fix.
 		if resumeMethod != "" {
-			resumeRes, err := s.tr.call(s.ctx, resumeMethod, map[string]any{
+			resumeRes, err := s.callBound(s.resumeTimeout, resumeMethod, map[string]any{
 				"sessionId":  resumeSessionID,
 				"cwd":        s.workDir,
 				"mcpServers": []any{},
@@ -331,7 +378,7 @@ func (s *acpSession) handshake(resumeSessionID string, authMethod string) error 
 		"cwd":        s.workDir,
 		"mcpServers": []any{},
 	}
-	newRes, err := s.tr.call(s.ctx, "session/new", newParams)
+	newRes, err := s.callBound(s.rpcTimeout, "session/new", newParams)
 	if err != nil {
 		return fmt.Errorf("acp: session/new: %w", err)
 	}
@@ -447,7 +494,7 @@ func (s *acpSession) SetLiveModel(model string) bool {
 	if sid == "" {
 		return false
 	}
-	res, err := s.tr.call(s.ctx, "session/set_config_option", map[string]any{
+	res, err := s.callBound(s.rpcTimeout, "session/set_config_option", map[string]any{
 		"sessionId": sid,
 		"configId":  "model",
 		"value":     model,
@@ -477,7 +524,7 @@ func (s *acpSession) SetLiveThoughtLevel(level string) bool {
 	if sid == "" {
 		return false
 	}
-	res, err := s.tr.call(s.ctx, "session/set_config_option", map[string]any{
+	res, err := s.callBound(s.rpcTimeout, "session/set_config_option", map[string]any{
 		"sessionId": sid,
 		"configId":  "thought_level",
 		"value":     level,
@@ -544,7 +591,7 @@ func (s *acpSession) SetLiveMode(mode string) bool {
 		)
 		return false
 	}
-	if _, err := s.tr.call(s.ctx, "session/set_mode", map[string]any{
+	if _, err := s.callBound(s.rpcTimeout, "session/set_mode", map[string]any{
 		"sessionId": sid,
 		"modeId":    modeID,
 	}); err != nil {
@@ -916,13 +963,82 @@ func (s *acpSession) handleElicitationRequest(id json.RawMessage, params json.Ra
 	})
 }
 
+// emit queues an event for the consumer. When the consumer is caught up it
+// delivers synchronously (non-blocking send); once the bounded channel
+// fills, overflow lands in emitBuf and a lazily-started pump forwards in
+// FIFO order. Either way emit never blocks the caller: a burst during
+// session/load history replay (nobody drains yet) can no longer stall the
+// transport read loop mid-RPC — the silent-wedge mechanism.
 func (s *acpSession) emit(ev core.Event) {
 	if ev.SessionID == "" {
 		ev.SessionID = s.currentACPSessionID()
 	}
+	if s.ctx != nil {
+		select {
+		case <-s.ctx.Done():
+			return
+		default:
+		}
+	}
+	s.emitMu.Lock()
+	if len(s.emitBuf) == 0 {
+		select {
+		case s.events <- ev:
+			s.emitMu.Unlock()
+			return
+		default:
+		}
+	}
+	// Channel full (or a queue is already draining): enqueue behind it so
+	// FIFO order is preserved across concurrent emitters.
+	s.emitBuf = append(s.emitBuf, ev)
+	s.emitMu.Unlock()
+	s.pumpOnce.Do(func() {
+		s.emitSig = make(chan struct{}, 1)
+		s.wg.Add(1)
+		go s.emitPump()
+	})
 	select {
-	case s.events <- ev:
-	case <-s.ctx.Done():
+	case s.emitSig <- struct{}{}:
+	default:
+	}
+}
+
+// emitPump drains emitBuf into the events channel in order. It exits when
+// the session context is done; Close() guarantees it has stopped before the
+// channel is closed, so it never sends on a closed channel.
+func (s *acpSession) emitPump() {
+	defer s.wg.Done()
+	ctx := s.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	for {
+		s.emitMu.Lock()
+		if len(s.emitBuf) == 0 {
+			s.emitBuf = nil
+			s.emitMu.Unlock()
+			select {
+			case <-ctx.Done():
+				return
+			case <-s.emitSig:
+				continue
+			}
+		}
+		ev := s.emitBuf[0]
+		s.emitBuf[0] = core.Event{}
+		s.emitBuf = s.emitBuf[1:]
+		s.emitMu.Unlock()
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+		select {
+		case s.events <- ev:
+		case <-ctx.Done():
+			return
+		}
 	}
 }
 
@@ -1093,12 +1209,25 @@ func (s *acpSession) CancelTurn() error {
 }
 
 func (s *acpSession) Alive() bool {
-	return s.alive.Load()
+	if !s.alive.Load() {
+		return false
+	}
+	// The alive flag is only cleared by the I/O goroutine after cmd.Wait()
+	// returns; a zombie child (killed but unreaped because that goroutine
+	// was wedged) would keep Alive() true forever. Probe the real process
+	// state so a dead child can never masquerade as a live session.
+	if s.cmd != nil && s.cmd.Process != nil && !processAlive(s.cmd.Process.Pid) {
+		return false
+	}
+	return true
 }
 
 func (s *acpSession) Close() error {
 	s.alive.Store(false)
 	s.cancel()
+	if s.tr != nil {
+		s.tr.shutdown(errTransportClosed)
+	}
 	if s.cmd != nil && s.cmd.Process != nil {
 		_ = s.cmd.Process.Kill()
 	}
